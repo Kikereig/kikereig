@@ -97,7 +97,7 @@
 <div class="overlay" id="rotate">
   <div class="phone">📱</div>
   <h2>Gira el móvil</h2>
-  <p>Piano Fácil se usa en horizontal para leer las notas de izquierda a derecha.</p>
+  <p>Piano Fácil se usa en horizontal para que quepa el teclado entero.</p>
 </div>
 
 <script>
@@ -279,12 +279,11 @@ function loadSong(song, fallbackName) {
   S.notes = song.notes.map(n => ({ ...n, hit: false, miss: false }));
   const ms = S.notes.map(n => n.midi);
   let lo = Math.min(...ms), hi = Math.max(...ms);
-  const chromatic = ms.some(isBlack);
-  // Al menos una octava visible, centrada en la canción
-  while (hi - lo < 12) hi++;   // completar hacia arriba (Do ... Do agudo)
-  S.lo = lo; S.hi = hi; S.base = 12 * Math.floor(Math.min(...ms) / 12);
-  S.rows = [];
-  for (let m = hi; m >= lo; m--) if (chromatic || !isBlack(m)) S.rows.push(m);
+  // Teclado de octavas completas: del Do de la nota más grave al Do por encima de la más aguda
+  lo = 12 * Math.floor(lo / 12); hi = 12 * Math.ceil((hi + 1) / 12);
+  S.lo = lo; S.hi = hi; S.base = lo;
+  S.whites = []; for (let m = lo; m <= hi; m++) if (!isBlack(m)) S.whites.push(m);
+  layout();
   $("songName").textContent = song.name || fallbackName || "Canción";
   $("total").textContent = S.notes.length;
   reset();
@@ -318,9 +317,9 @@ function nextGroup() {
 
 function markHit(n) {
   n.hit = true; S.score++; $("score").textContent = S.score;
-  const y = rowY(n.midi);
-  if (y != null) for (let i = 0; i < 14; i++) S.sparks.push({ x: hitX(), y: y + rowH() / 2,
-      vx: (Math.random() - 0.3) * 260, vy: (Math.random() - 0.5) * 260, life: 0.6, c: COLORS[n.midi % 12] });
+  const k = S.keys[n.midi];
+  if (k) for (let i = 0; i < 14; i++) S.sparks.push({ x: k.x + k.w / 2, y: hitY(),
+      vx: (Math.random() - 0.5) * 260, vy: -Math.random() * 300, life: 0.6, c: COLORS[n.midi % 12] });
 }
 
 function onPlayed(m, source) {
@@ -367,8 +366,8 @@ function finish() {
 }
 
 // ---------------------------------------------------------------------------
-// Dibujo: piano roll horizontal. Teclado a la izquierda, las notas llegan
-// de derecha a izquierda hasta la línea de tocar. Agudos arriba, graves abajo.
+// Dibujo: pantalla en horizontal, teclado de piano abajo y las notas caen
+// desde arriba en la columna de su tecla hasta la línea de tocar.
 // ---------------------------------------------------------------------------
 let W = 0, H = 0, DPR = 1;
 function resize() {
@@ -377,96 +376,118 @@ function resize() {
   cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
   g.setTransform(DPR, 0, 0, DPR, 0, 0);
   $("rotate").classList.toggle("show", H > W * 1.05 && matchMedia("(pointer: coarse)").matches);
-  draw();
+  layout(); draw();
 }
-const kbW = () => Math.max(70, Math.min(130, W * 0.13));
-const hitX = () => kbW() + 40;
-const pps = () => Math.max(120, W * 0.16);     // píxeles por segundo de canción
-const rowH = () => (H - 16) / S.rows.length;
-const rowY = m => { const i = S.rows.indexOf(m); return i < 0 ? null : 8 + i * rowH(); };
+const kbH = () => Math.min(H * 0.3, 200);               // alto del teclado
+const hitY = () => H - kbH() - 2;                       // línea de tocar (encima del teclado)
+const pps = () => Math.max(110, H * 0.4);               // píxeles por segundo de canción
+
+// Posición de cada tecla: blancas a lo ancho, negras encima entre dos blancas
+function layout() {
+  S.keys = {};
+  if (!W || !S.whites) return;
+  const ww = W / S.whites.length, bw = ww * 0.62;
+  S.whites.forEach((m, i) => { S.keys[m] = { x: i * ww, w: ww, black: false }; });
+  for (let m = S.lo; m <= S.hi; m++) if (isBlack(m) && S.keys[m - 1])
+    S.keys[m] = { x: S.keys[m - 1].x + ww - bw / 2, w: bw, black: true };
+}
 
 function rrect(x, y, w, h, r) {
-  r = Math.min(r, w / 2, h / 2);
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
   g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
   g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
 }
+const font = (wgt, px) => `${wgt} ${px}px ui-rounded, system-ui, sans-serif`;
 
 function draw() {
-  if (!W) return;
-  const now = performance.now(), rh = rowH(), kx = kbW(), hx = hitX(), px = pps();
+  if (!W || !S.keys) return;
+  const now = performance.now(), hy = hitY(), kh = kbH(), px = pps();
+  const pulse = 0.6 + 0.4 * Math.sin(now / 150);
   g.clearRect(0, 0, W, H);
-  const bg = g.createLinearGradient(0, 0, W, 0); bg.addColorStop(0, "#1a1738"); bg.addColorStop(1, "#14122b");
-  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  const bg = g.createLinearGradient(0, 0, 0, hy); bg.addColorStop(0, "#14122b"); bg.addColorStop(1, "#1f1b42");
+  g.fillStyle = bg; g.fillRect(0, 0, W, hy);
 
-  // Carriles
-  S.rows.forEach((m, i) => {
-    const y = 8 + i * rh;
-    g.fillStyle = isBlack(m) ? "#0000002a" : (i % 2 ? "#ffffff07" : "#ffffff0d");
-    g.fillRect(kx, y, W - kx, rh);
-    if (m % 12 === 0) { g.fillStyle = "#ffffff22"; g.fillRect(kx, y + rh - 1, W - kx, 1); }
+  // Columnas: una por tecla blanca, líneas más marcadas en cada Do
+  S.whites.forEach((m, i) => {
+    const k = S.keys[m];
+    if (i % 2) { g.fillStyle = "#ffffff06"; g.fillRect(k.x, 0, k.w, hy); }
+    g.fillStyle = m % 12 === 0 ? "#ffffff26" : "#ffffff10"; g.fillRect(k.x, 0, 1, hy);
   });
-
-  // Compases (cada 2 s de canción, guía visual)
-  g.fillStyle = "#ffffff0c";
-  for (let s = Math.ceil(S.t); s < S.t + (W - hx) / px; s++) { const x = hx + (s - S.t) * px; if (x > kx) g.fillRect(x, 8, 1, H - 16); }
+  // Guías horizontales: una por segundo de canción
+  g.fillStyle = "#ffffff0b";
+  for (let sec = Math.ceil(S.t); sec < S.t + hy / px; sec++) { const y = hy - (sec - S.t) * px; g.fillRect(0, y, W, 1); }
 
   // Línea de tocar
   const target = S.mode === "wait" && !S.demo ? nextGroup() : [];
   const waiting = S.playing && target.length && S.t >= target[0].start - 0.001;
-  g.fillStyle = waiting ? `rgba(255,207,63,${0.55 + 0.35 * Math.sin(now / 150)})` : "#ffcf3faa";
-  g.fillRect(hx - 2, 4, 4, H - 8);
+  g.fillStyle = waiting ? `rgba(255,207,63,${pulse})` : "#ffcf3fbb";
+  g.fillRect(0, hy - 3, W, 4);
 
-  // Notas
-  const fs = Math.max(11, Math.min(22, rh * 0.5));
-  g.textBaseline = "middle"; g.textAlign = "left";
+  // Notas que caen
+  g.save(); g.beginPath(); g.rect(0, 0, W, hy); g.clip();
+  g.textAlign = "center"; g.textBaseline = "bottom";
   for (const n of S.notes) {
-    const x = hx + (n.start - S.t) * px, w = Math.max(14, n.dur * px - 4), y = rowY(n.midi);
-    if (y == null || x > W || x + w < kx) continue;
-    const c = COLORS[n.midi % 12];
-    g.save();
-    g.beginPath(); g.rect(kx, 0, W - kx, H); g.clip();
-    rrect(x, y + 3, w, rh - 6, Math.min(12, rh / 3));
+    const k = S.keys[n.midi]; if (!k) continue;
+    const yb = hy - (n.start - S.t) * px, h = Math.max(16, n.dur * px - 4), yt = yb - h;
+    if (yt > hy || yb < 0) continue;
+    const pad = k.black ? 2 : Math.max(3, k.w * 0.08), x = k.x + pad, w = k.w - pad * 2;
+    rrect(x, yt, w, h, Math.min(12, w / 3));
     g.globalAlpha = n.hit ? 0.3 : n.miss ? 0.25 : 1;
-    g.fillStyle = n.miss ? "#666" : c; g.fill();
+    g.fillStyle = n.miss ? "#666" : COLORS[n.midi % 12]; g.fill();
     if (target.includes(n)) { g.globalAlpha = 1; g.lineWidth = 3; g.strokeStyle = "#fff"; g.stroke(); }
-    if (w > fs * 1.6 && rh > 16) {
+    const fs = Math.max(11, Math.min(24, w * 0.32));
+    if (h > fs + 8) {
       g.globalAlpha = n.hit || n.miss ? 0.5 : 1;
-      g.fillStyle = "#1b1533"; g.font = `800 ${fs}px ui-rounded, system-ui, sans-serif`;
-      g.fillText(n.hit ? "✓" : noteName(n.midi), x + 8, y + rh / 2);
+      g.fillStyle = "#1b1533"; g.font = font(800, fs);
+      g.fillText(n.hit ? "✓" : noteName(n.midi), x + w / 2, yb - 6);
     }
-    g.restore();
+    g.globalAlpha = 1;
   }
+  g.restore();
 
-  // Teclado (de lado): teclas blancas/negras con su nombre
-  S.rows.forEach((m, i) => {
-    const y = 8 + i * rh, f = S.flashes[m], lit = f && f.until > now;
-    const want = target.some(n => n.midi === m) && waiting;
-    rrect(4, y + 1, kx - 8, rh - 2, 8);
-    g.fillStyle = lit ? f.color : isBlack(m) ? "#2b2840" : "#f7f5ff"; g.fill();
-    g.fillStyle = COLORS[m % 12]; g.fillRect(kx - 14, y + 4, 6, rh - 8);   // color de la nota
-    if (want) { g.lineWidth = 3; g.strokeStyle = `rgba(255,207,63,${0.6 + 0.4 * Math.sin(now / 150)})`; rrect(4, y + 1, kx - 8, rh - 2, 8); g.stroke(); }
-    g.fillStyle = lit ? "#111" : isBlack(m) ? "#ddd" : "#222";
-    g.font = `800 ${Math.max(11, Math.min(20, rh * 0.48))}px ui-rounded, system-ui, sans-serif`;
-    g.fillText(noteName(m), 14, y + rh / 2);
-  });
+  // Teclado de piano (abajo)
+  const ky = hy + 2;
+  g.fillStyle = "#0d0b1f"; g.fillRect(0, ky, W, H - ky);
+  const keyState = m => {
+    const f = S.flashes[m];
+    return { lit: f && f.until > now ? f.color : null, want: waiting && target.some(n => n.midi === m) };
+  };
+  g.textAlign = "center"; g.textBaseline = "bottom";
+  for (const m of S.whites) {
+    const k = S.keys[m], st = keyState(m);
+    rrect(k.x + 1.5, ky, k.w - 3, kh - 4, 8);
+    g.fillStyle = st.lit || "#f7f5ff"; g.fill();
+    if (st.want) { g.lineWidth = 4; g.strokeStyle = `rgba(255,207,63,${pulse})`; g.stroke(); }
+    g.fillStyle = COLORS[m % 12]; rrect(k.x + k.w * 0.2, ky + kh - 14, k.w * 0.6, 6, 3); g.fill();
+    g.fillStyle = "#2a2540"; g.font = font(800, Math.max(11, Math.min(20, k.w * 0.3)));
+    g.fillText(noteName(m), k.x + k.w / 2, ky + kh - 20);
+  }
+  for (let m = S.lo; m <= S.hi; m++) {
+    const k = S.keys[m]; if (!k || !k.black) continue;
+    const st = keyState(m);
+    rrect(k.x, ky, k.w, kh * 0.6, 6);
+    g.fillStyle = st.lit || "#2b2840"; g.fill();
+    if (st.want) { g.lineWidth = 3; g.strokeStyle = `rgba(255,207,63,${pulse})`; g.stroke(); }
+  }
 
   // Chispas al acertar
   const dt = 1 / 60;
-  S.sparks = S.sparks.filter(s => (s.life -= dt) > 0);
-  for (const s of S.sparks) {
-    s.x += s.vx * dt; s.y += s.vy * dt; s.vy += 400 * dt;
-    g.globalAlpha = Math.max(0, s.life / 0.6); g.fillStyle = s.c;
-    g.beginPath(); g.arc(s.x, s.y, 4, 0, Math.PI * 2); g.fill();
+  S.sparks = S.sparks.filter(sp => (sp.life -= dt) > 0);
+  for (const sp of S.sparks) {
+    sp.x += sp.vx * dt; sp.y += sp.vy * dt; sp.vy += 500 * dt;
+    g.globalAlpha = Math.max(0, sp.life / 0.6); g.fillStyle = sp.c;
+    g.beginPath(); g.arc(sp.x, sp.y, 4, 0, Math.PI * 2); g.fill();
   }
   g.globalAlpha = 1;
 
-  // Cuenta atrás
+  // Cuenta atrás / ayuda
+  g.textBaseline = "middle"; g.textAlign = "center";
   if (S.playing && !S.demo && S.t < 0 && S.notes[0].start > S.t) {
-    g.fillStyle = "#ffffffcc"; g.textAlign = "center"; g.font = `900 ${Math.min(90, H * 0.25)}px ui-rounded, system-ui, sans-serif`;
-    g.fillText(Math.ceil(-S.t) || "¡Ya!", (kx + W) / 2, H / 2);
+    g.fillStyle = "#ffffffcc"; g.font = font(900, Math.min(90, hy * 0.35));
+    g.fillText(Math.ceil(-S.t) || "¡Ya!", W / 2, hy / 2);
   } else if (!S.playing && !S.ended) {
-    g.fillStyle = "#ffffffaa"; g.textAlign = "center"; g.font = `700 ${Math.min(22, H * 0.06)}px ui-rounded, system-ui, sans-serif`;
-    g.fillText(mic.on ? "Pulsa ▶ Empezar y toca la nota que llega a la línea" : "Activa 🎤 Micrófono o toca las teclas de la izquierda", (kx + W) / 2, H / 2);
+    g.fillStyle = "#ffffffaa"; g.font = font(700, Math.min(22, hy * 0.08));
+    g.fillText(mic.on ? "Pulsa ▶ Empezar y toca la nota cuando llegue a la línea" : "Activa 🎤 Micrófono o toca las teclas de abajo", W / 2, hy / 2);
   }
 }
 
@@ -496,9 +517,11 @@ $("file").onchange = async e => {
 // Tocar las teclas del teclado en pantalla (para probar sin piano)
 cv.addEventListener("pointerdown", e => {
   const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
-  if (x > kbW()) return;
-  const i = Math.floor((y - 8) / rowH());
-  if (i >= 0 && i < S.rows.length) onPlayed(S.rows[i], "touch");
+  const ky = hitY() + 2; if (y < ky) return;
+  // Primero las negras (están encima), luego las blancas
+  for (let m = S.lo; m <= S.hi; m++) { const k = S.keys[m];
+    if (k && k.black && y < ky + kbH() * 0.6 && x >= k.x && x < k.x + k.w) return onPlayed(m, "touch"); }
+  for (const m of S.whites) { const k = S.keys[m]; if (x >= k.x && x < k.x + k.w) return onPlayed(m, "touch"); }
 });
 // Teclado del ordenador: A S D F G H J K = Do Re Mi Fa Sol La Si Do
 const KEYMAP = { a: 0, s: 2, d: 4, f: 5, g: 7, h: 9, j: 11, k: 12, w: 1, e: 3, t: 6, y: 8, u: 10 };
