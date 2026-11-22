@@ -26,7 +26,7 @@
     padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right));
     background: var(--bg2); border-bottom: 1px solid #ffffff14; flex-wrap: wrap; }
   .title { font-weight: 800; font-size: 18px; margin-right: 6px; white-space: nowrap; }
-  .song { color: var(--muted); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 22ch; }
+  #song { max-width: 24ch; text-overflow: ellipsis; }
   .spacer { flex: 1; }
   button, select, label.btn { font: inherit; font-size: 14px; font-weight: 700; color: var(--text);
     background: var(--panel); border: 1px solid #ffffff22; border-radius: 12px; padding: 8px 12px;
@@ -60,7 +60,7 @@
     header { flex-wrap: nowrap; overflow-x: auto; gap: 6px; padding-top: 6px; padding-bottom: 6px; scrollbar-width: none; }
     header::-webkit-scrollbar { display: none; }
     .title { display: none; }
-    .song { max-width: 12ch; font-size: 13px; }
+    #song { max-width: 16ch; }
     button, select, label.btn { font-size: 13px; padding: 6px 9px; border-radius: 10px; }
     .spacer { display: none; }
     #heard { font-size: 16px; min-width: 52px; padding: 4px 8px; }
@@ -71,10 +71,11 @@
 <div id="app">
   <header>
     <span class="title">🎹 Piano Fácil</span>
-    <span class="song" id="songName">Estrellita</span>
+    <select id="song" title="Canción"></select>
     <button class="primary" id="btnPlay">▶ Empezar</button>
     <button id="btnMic">🎤 Micrófono</button>
     <button id="btnDemo">🔊 Escuchar</button>
+    <button id="btnHands" title="Tocar con una mano o con las dos">🙌 2 manos</button>
     <select id="speed" title="Velocidad">
       <option value="0.5">🐢 Lento</option>
       <option value="0.75" selected>🙂 Normal</option>
@@ -104,9 +105,17 @@
 <script>
 "use strict";
 // ---------------------------------------------------------------------------
-// Canción incluida: Estrellita (dominio público), generada con tools/make_midis.py
+// Canciones incluidas (dominio público): melodía + acompañamiento de 1 o 2 teclas
 // ---------------------------------------------------------------------------
-const BUILTIN_MIDI_B64 = "TVRoZAAAAAYAAAABAeBNVHJrAAABngD/AwpFc3RyZWxsaXRhAP9RAwtxsAD/WAQEAhgIAMAAAJA8WoMwgDwAMJA8WoMwgDwAMJBDWoMwgEMAMJBDWoMwgEMAMJBFWoMwgEUAMJBFWoMwgEUAMJBDWoZggEMAYJBBWoMwgEEAMJBBWoMwgEEAMJBAWoMwgEAAMJBAWoMwgEAAMJA+WoMwgD4AMJA+WoMwgD4AMJA8WoZggDwAYJBDWoMwgEMAMJBDWoMwgEMAMJBBWoMwgEEAMJBBWoMwgEEAMJBAWoMwgEAAMJBAWoMwgEAAMJA+WoZggD4AYJBDWoMwgEMAMJBDWoMwgEMAMJBBWoMwgEEAMJBBWoMwgEEAMJBAWoMwgEAAMJBAWoMwgEAAMJA+WoZggD4AYJA8WoMwgDwAMJA8WoMwgDwAMJBDWoMwgEMAMJBDWoMwgEMAMJBFWoMwgEUAMJBFWoMwgEUAMJBDWoZggEMAYJBBWoMwgEEAMJBBWoMwgEEAMJBAWoMwgEAAMJBAWoMwgEAAMJA+WoMwgD4AMJA+WoMwgD4AMJA8WoZggDwAYP8vAA==";
+// SONGS-START (generado por tools/make_midis.py)
+const SONGS = [
+  { id: "estrellita", title: "Estrellita", b64: "TVRoZAAAAAYAAQACAeBNVHJrAAABngD/AwpFc3RyZWxsaXRhAP9RAwtxsAD/WAQEAhgIAMAAAJA8WoMwgDwAMJA8WoMwgDwAMJBDWoMwgEMAMJBDWoMwgEMAMJBFWoMwgEUAMJBFWoMwgEUAMJBDWoZggEMAYJBBWoMwgEEAMJBBWoMwgEEAMJBAWoMwgEAAMJBAWoMwgEAAMJA+WoMwgD4AMJA+WoMwgD4AMJA8WoZggDwAYJBDWoMwgEMAMJBDWoMwgEMAMJBBWoMwgEEAMJBBWoMwgEEAMJBAWoMwgEAAMJBAWoMwgEAAMJA+WoZggD4AYJBDWoMwgEMAMJBDWoMwgEMAMJBBWoMwgEEAMJBBWoMwgEEAMJBAWoMwgEAAMJBAWoMwgEAAMJA+WoZggD4AYJA8WoMwgDwAMJA8WoMwgDwAMJBDWoMwgEMAMJBDWoMwgEMAMJBFWoMwgEUAMJBFWoMwgEUAMJBDWoZggEMAYJBBWoMwgEEAMJBBWoMwgEEAMJBAWoMwgEAAMJBAWoMwgEAAMJA+WoMwgD4AMJA+WoMwgD4AMJA8WoZggDwAYP8vAE1UcmsAAADqAP8DD0Fjb21wYcOxYW1pZW50bwDBAACRMEaNQIEwAIFAkTVGhmCBNQBgkTBGhmCBMABgkTVGhmCBNQBgkTBGhmCBMABgkTdGhmCBNwBgkTBGhmCBMABgkTBGhmCBMABgkTVGhmCBNQBgkTBGhmCBMABgkTdGhmCBNwBgkTBGhmCBMABgkTVGhmCBNQBgkTBGhmCBMABgkTdGhmCBNwBgkTBGjUCBMACBQJE1RoZggTUAYJEwRoZggTAAYJE1RoZggTUAYJEwRoZggTAAYJE3RoZggTcAYJEwRgCRN0aGYIEwAACBNwBg/y8A" },
+  { id: "himno", title: "Himno de la alegría", b64: "TVRoZAAAAAYAAQACAeBNVHJrAAABPAD/AxRIaW1ubyBkZSBsYSBhbGVncsOtYQD/UQMK5i0A/1gEBAIYCADAAACQQFqDMIBAADCQQFqDMIBAADCQQVqDMIBBADCQQ1qDMIBDADCQQ1qDMIBDADCQQVqDMIBBADCQQFqDMIBAADCQPlqDMIA+ADCQPFqDMIA8ADCQPFqDMIA8ADCQPlqDMIA+ADCQQFqDMIBAADCQQFqFCIBAAEiQPlqBWIA+ABiQPlqGYIA+AGCQQFqDMIBAADCQQFqDMIBAADCQQVqDMIBBADCQQ1qDMIBDADCQQ1qDMIBDADCQQVqDMIBBADCQQFqDMIBAADCQPlqDMIA+ADCQPFqDMIA8ADCQPFqDMIA8ADCQPlqDMIA+ADCQQFqDMIBAADCQPlqFCIA+AEiQPFqBWIA8ABiQPFqGYIA8AGD/LwBNVHJrAAAAggD/Aw9BY29tcGHDsWFtaWVudG8AwQAAkTBGjUCBMACBQJE3Ro1AgTcAgUCRMEaNQIEwAIFAkTBGhmCBMABgkTdGhmCBNwBgkTBGjUCBMACBQJE3Ro1AgTcAgUCRMEaNQIEwAIFAkTdGhmCBNwBgkTBGAJE3RoZggTAAAIE3AGD/LwA=" },
+  { id: "martinillo", title: "Martinillo", b64: "TVRoZAAAAAYAAQACAeBNVHJrAAABRAD/AwpNYXJ0aW5pbGxvAP9RAwnzjQD/WAQEAhgIAMAAAJA8WoMwgDwAMJA+WoMwgD4AMJBAWoMwgEAAMJA8WoMwgDwAMJA8WoMwgDwAMJA+WoMwgD4AMJBAWoMwgEAAMJA8WoMwgDwAMJBAWoMwgEAAMJBBWoMwgEEAMJBDWoZggEMAYJBAWoMwgEAAMJBBWoMwgEEAMJBDWoZggEMAYJBDWoFYgEMAGJBFWoFYgEUAGJBDWoFYgEMAGJBBWoFYgEEAGJBAWoMwgEAAMJA8WoMwgDwAMJBDWoFYgEMAGJBFWoFYgEUAGJBDWoFYgEMAGJBBWoFYgEEAGJBAWoMwgEAAMJA8WoMwgDwAMJA8WoMwgDwAMJA3WoMwgDcAMJA8WoZggDwAYJA8WoMwgDwAMJA3WoMwgDcAMJA8WoZggDwAYP8vAE1UcmsAAABqAP8DD0Fjb21wYcOxYW1pZW50bwDBAACRMEaNQIEwAIFAkTBGjUCBMACBQJEwRo1AgTAAgUCRMEaNQIEwAIFAkTBGjUCBMACBQJEwRo1AgTAAgUCRMEaNQIEwAIFAkTBGjUCBMACBQP8vAA==" },
+  { id: "mary", title: "María tenía un corderito", b64: "TVRoZAAAAAYAAQACAeBNVHJrAAABHwD/AxpNYXLDrWEgdGVuw61hIHVuIGNvcmRlcml0bwD/UQMJ840A/1gEBAIYCADAAACQQFqDMIBAADCQPlqDMIA+ADCQPFqDMIA8ADCQPlqDMIA+ADCQQFqDMIBAADCQQFqDMIBAADCQQFqGYIBAAGCQPlqDMIA+ADCQPlqDMIA+ADCQPlqGYIA+AGCQQFqDMIBAADCQQ1qDMIBDADCQQ1qGYIBDAGCQQFqDMIBAADCQPlqDMIA+ADCQPFqDMIA8ADCQPlqDMIA+ADCQQFqDMIBAADCQQFqDMIBAADCQQFqDMIBAADCQQFqDMIBAADCQPlqDMIA+ADCQPlqDMIA+ADCQQFqDMIBAADCQPlqDMIA+ADCQPFqNQIA8AIFA/y8ATVRyawAAAHIA/wMPQWNvbXBhw7FhbWllbnRvAMEAAJEwRo1AgTAAgUCRMEaNQIEwAIFAkTdGjUCBNwCBQJEwRo1AgTAAgUCRMEaNQIEwAIFAkTBGjUCBMACBQJE3Ro1AgTcAgUCRMEYAkTdGjUCBMAAAgTcAgUD/LwA=" },
+  { id: "cumple", title: "Cumpleaños feliz", b64: "TVRoZAAAAAYAAQACAeBNVHJrAAABCQD/AxFDdW1wbGVhw7FvcyBmZWxpegD/UQMJiWgA/1gEAwIYCADAAACQPFqCRIA8ACSQPFpsgDwADJA+WoMwgD4AMJA8WoMwgDwAMJBBWoMwgEEAMJBAWoZggEAAYJA8WoJEgDwAJJA8WmyAPAAMkD5agzCAPgAwkDxagzCAPAAwkENagzCAQwAwkEFahmCAQQBgkDxagkSAPAAkkDxabIA8AAyQSFqDMIBIADCQRVqDMIBFADCQQVqDMIBBADCQQFqDMIBAADCQPlqDMIA+ADCQRlqCRIBGACSQRlpsgEYADJBFWoMwgEUAMJBBWoMwgEEAMJBDWoMwgEMAMJBBWooQgEEAgRD/LwBNVHJrAAAAewD/Aw9BY29tcGHDsWFtaWVudG8AwQCDYJE1RooQgTUAgRCRMEaKEIEwAIEQkTBGihCBMACBEJE1RooQgTUAgRCRNUaKEIE1AIEQkTpGihCBOgCBEJE1RoMwgTUAMJEwRoZggTAAYJEwRgCRNUaKEIEwAACBNQCBEP8vAA==" },
+];
+// SONGS-END
 
 const NAMES = ["Do","Do♯","Re","Re♯","Mi","Fa","Fa♯","Sol","Sol♯","La","La♯","Si"];
 // Un color por nota (estilo "boomwhacker"), igual en todas las octavas
@@ -127,7 +136,7 @@ function parseMidi(buf) {
   const hlen = u32(); u16(); const ntr = u16(); const div = u16(); p += hlen - 6;
   if (div & 0x8000) throw new Error("MIDI con formato de tiempo SMPTE no soportado");
   const tempos = [{ tick: 0, uspq: 500000 }];
-  const raw = []; let name = "";
+  const raw = []; let name = "", noteTracks = [];
   for (let t = 0; t < ntr && p < d.byteLength; t++) {
     const id = str(4), len = u32(), end = p + len;
     if (id !== "MTrk") { p = end; continue; }
@@ -151,7 +160,7 @@ function parseMidi(buf) {
           open.get(k).push(tick);
         } else if (open.has(k) && open.get(k).length) {
           const on = open.get(k).shift();
-          if (ch !== 9) raw.push({ midi: key, on, off: tick });   // canal 10 = percusión, se ignora
+          if (ch !== 9) { raw.push({ midi: key, on, off: tick, trk: t }); if (!noteTracks.includes(t)) noteTracks.push(t); }   // canal 10 = percusión, se ignora
         }
       } else if (type === 0xc0 || type === 0xd0) { p += 1; }
       else { p += 2; }
@@ -164,7 +173,8 @@ function parseMidi(buf) {
     for (const tp of tempos) { if (tp.tick > tick) break; s += (tp.tick - last) * us / div / 1e6; last = tp.tick; us = tp.uspq; }
     return s + (tick - last) * us / div / 1e6;
   };
-  const notes = raw.map(n => ({ midi: n.midi, start: toSec(n.on), dur: Math.max(0.08, toSec(n.off) - toSec(n.on)) }))
+  const melodyTrack = Math.min(...noteTracks);
+  const notes = raw.map(n => ({ midi: n.midi, start: toSec(n.on), dur: Math.max(0.08, toSec(n.off) - toSec(n.on)), hand: n.trk === melodyTrack ? 0 : 1 }))
                    .sort((a, b) => a.start - b.start || a.midi - b.midi);
   if (!notes.length) throw new Error("El MIDI no tiene notas");
   return { name, notes };
@@ -272,13 +282,15 @@ const cv = $("cv"), g = cv.getContext("2d");
 const btnPlay = $("btnPlay"), btnMic = $("btnMic"), btnDemo = $("btnDemo"), heardEl = $("heard");
 
 const S = { notes: [], lo: 60, hi: 72, rows: [], t: -2, playing: false, demo: false,
-            mode: "wait", speed: 0.75, score: 0, flashes: {}, sparks: [], lastFrame: 0, ended: false };
+            mode: "wait", twoHands: true, speed: 0.75, score: 0, flashes: {}, sparks: [], lastFrame: 0, ended: false };
 const LEAD = 2.5;          // segundos antes de que llegue la primera nota
 const WINDOW = 0.35;       // margen para acertar en modo "con ritmo" (s)
 
-function loadSong(song, fallbackName) {
-  S.notes = song.notes.map(n => ({ ...n, hit: false, miss: false }));
-  const ms = S.notes.map(n => n.midi);
+function loadSong(song) {
+  S.song = song;
+  applyHands();
+  // El teclado se calcula con todas las notas, para que no cambie al pasar de 1 a 2 manos
+  const ms = song.notes.map(n => n.midi);
   let lo = Math.min(...ms), hi = Math.max(...ms);
   // Teclado de octavas completas: del Do de la nota más grave al Do por encima de la más aguda
   lo = 12 * Math.floor(lo / 12); hi = 12 * Math.ceil((hi + 1) / 12);
@@ -287,9 +299,14 @@ function loadSong(song, fallbackName) {
   S.lo = lo; S.hi = hi; S.base = 12 * Math.floor(Math.min(...ms) / 12);   // teclas A..K = octava de la canción
   S.whites = []; for (let m = lo; m <= hi; m++) if (!isBlack(m)) S.whites.push(m);
   layout();
-  $("songName").textContent = song.name || fallbackName || "Canción";
-  $("total").textContent = S.notes.length;
   reset();
+}
+function applyHands() {
+  const hasLeft = S.song.notes.some(n => n.hand === 1);
+  btnHands.hidden = !hasLeft;
+  btnHands.textContent = S.twoHands ? "🙌 2 manos" : "☝️ 1 mano";
+  S.notes = S.song.notes.filter(n => S.twoHands || n.hand === 0).map(n => ({ ...n, hit: false, miss: false }));
+  $("total").textContent = S.notes.length;
 }
 
 function reset() {
@@ -434,14 +451,16 @@ function draw() {
     const yb = hy - (n.start - S.t) * px, h = Math.max(16, n.dur * px - 4), yt = yb - h;
     if (yt > hy || yb < 0) continue;
     const pad = k.black ? 2 : Math.max(3, k.w * 0.08), x = k.x + pad, w = k.w - pad * 2;
+    const left = n.hand === 1;   // mano izquierda: nota "hueca" con borde de color
     rrect(x, yt, w, h, Math.min(12, w / 3));
-    g.globalAlpha = n.hit ? 0.3 : n.miss ? 0.25 : 1;
+    g.globalAlpha = (n.hit ? 0.3 : n.miss ? 0.25 : 1) * (left ? 0.35 : 1);
     g.fillStyle = n.miss ? "#666" : COLORS[n.midi % 12]; g.fill();
+    if (left && !n.hit) { g.globalAlpha = 1; g.lineWidth = 3; g.strokeStyle = COLORS[n.midi % 12]; rrect(x + 1.5, yt + 1.5, w - 3, h - 3, Math.min(12, w / 3)); g.stroke(); }
     if (target.includes(n)) { g.globalAlpha = 1; g.lineWidth = 3; g.strokeStyle = "#fff"; g.stroke(); }
     const fs = Math.max(11, Math.min(24, w * 0.32));
     if (h > fs + 8) {
       g.globalAlpha = n.hit || n.miss ? 0.5 : 1;
-      g.fillStyle = "#1b1533"; g.font = font(800, fs);
+      g.fillStyle = left ? "#f4f2ff" : "#1b1533"; g.font = font(800, fs);
       g.fillText(n.hit ? "✓" : noteName(n.midi), x + w / 2, yb - 6);
     }
     g.globalAlpha = 1;
@@ -485,7 +504,7 @@ function draw() {
 
   // Mientras espera: qué nota hay que tocar
   if (waiting) {
-    const n = target[0], k = S.keys[n.midi];
+    const n = target.find(t => t.hand === 0) || target[0], k = S.keys[n.midi];
     g.textAlign = "center"; g.textBaseline = "middle"; g.font = font(900, Math.min(34, hy * 0.12));
     const label = "Toca " + noteName(n.midi), tw = g.measureText(label).width + 36, bx = Math.min(W - tw - 8, Math.max(8, k.x + k.w / 2 - tw / 2));
     rrect(bx, 10, tw, Math.min(54, hy * 0.18), 14); g.fillStyle = COLORS[n.midi % 12]; g.fill();
@@ -521,7 +540,11 @@ $("btnAgain").onclick = () => { reset(); start(false); };
 $("speed").onchange = e => { S.speed = +e.target.value; };
 $("file").onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
-  try { pause(); loadSong(parseMidi(await f.arrayBuffer()), f.name.replace(/\.midi?$/i, "")); btnPlay.textContent = "▶ Empezar"; }
+  try {
+    const song = parseMidi(await f.arrayBuffer()), name = song.name || f.name.replace(/\.midi?$/i, "");
+    pause(); loadSong(song); btnPlay.textContent = "▶ Empezar";
+    const opt = new Option("📄 " + name, "file"); songSel.querySelector('option[value="file"]')?.remove(); songSel.add(opt); songSel.value = "file";
+  }
   catch (err) { toast("No se pudo leer el MIDI: " + err.message); }
   e.target.value = "";
 };
@@ -553,8 +576,15 @@ function toast(msg) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), 6000);
 }
 
-const bytes = Uint8Array.from(atob(BUILTIN_MIDI_B64), c => c.charCodeAt(0));
-loadSong(parseMidi(bytes.buffer), "Estrellita");
+const songSel = $("song"), btnHands = $("btnHands");
+const songFromB64 = b64 => parseMidi(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer);
+SONGS.forEach((s, i) => songSel.add(new Option(`${i + 1}. ${s.title}`, s.id)));
+songSel.onchange = () => {
+  const s = SONGS.find(x => x.id === songSel.value); if (!s) return;
+  pause(); loadSong(songFromB64(s.b64)); btnPlay.textContent = "▶ Empezar";
+};
+btnHands.onclick = () => { S.twoHands = !S.twoHands; pause(); applyHands(); reset(); btnPlay.textContent = "▶ Empezar"; };
+loadSong(songFromB64(SONGS[0].b64));
 resize();
 requestAnimationFrame(loop);
 </script>
