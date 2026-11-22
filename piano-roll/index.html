@@ -75,10 +75,6 @@
     <button class="primary" id="btnPlay">▶ Empezar</button>
     <button id="btnMic">🎤 Micrófono</button>
     <button id="btnDemo">🔊 Escuchar</button>
-    <select id="mode" title="Modo">
-      <option value="wait">⏳ Me espera</option>
-      <option value="rhythm">🥁 Con ritmo</option>
-    </select>
     <select id="speed" title="Velocidad">
       <option value="0.5">🐢 Lento</option>
       <option value="0.75" selected>🙂 Normal</option>
@@ -286,7 +282,9 @@ function loadSong(song, fallbackName) {
   let lo = Math.min(...ms), hi = Math.max(...ms);
   // Teclado de octavas completas: del Do de la nota más grave al Do por encima de la más aguda
   lo = 12 * Math.floor(lo / 12); hi = 12 * Math.ceil((hi + 1) / 12);
-  S.lo = lo; S.hi = hi; S.base = lo;
+  // Mínimo 2 octavas (25 teclas). Se amplía hacia abajo hasta Do3 para dejar el Do central en medio.
+  while (hi - lo < 24) { if (lo > 48) lo -= 12; else hi += 12; }
+  S.lo = lo; S.hi = hi; S.base = 12 * Math.floor(Math.min(...ms) / 12);   // teclas A..K = octava de la canción
   S.whites = []; for (let m = lo; m <= hi; m++) if (!isBlack(m)) S.whites.push(m);
   layout();
   $("songName").textContent = song.name || fallbackName || "Canción";
@@ -334,7 +332,7 @@ function onPlayed(m, source) {
   if (S.mode === "wait") {
     const grp = nextGroup();
     // Con micrófono solo se oye una nota: acertar una nota del acorde vale para todo el grupo
-    if (grp.length && grp.some(n => n.midi === m)) { grp.forEach(markHit); ok = true; }
+    if (grp.length && grp[0].start - S.t <= 0.4 && grp.some(n => n.midi === m)) { grp.forEach(markHit); ok = true; }
   } else {
     const n = S.notes.find(n => !n.hit && !n.miss && n.midi === m && Math.abs(n.start - S.t) <= WINDOW);
     if (n) { markHit(n); ok = true; }
@@ -485,6 +483,15 @@ function draw() {
   }
   g.globalAlpha = 1;
 
+  // Mientras espera: qué nota hay que tocar
+  if (waiting) {
+    const n = target[0], k = S.keys[n.midi];
+    g.textAlign = "center"; g.textBaseline = "middle"; g.font = font(900, Math.min(34, hy * 0.12));
+    const label = "Toca " + noteName(n.midi), tw = g.measureText(label).width + 36, bx = Math.min(W - tw - 8, Math.max(8, k.x + k.w / 2 - tw / 2));
+    rrect(bx, 10, tw, Math.min(54, hy * 0.18), 14); g.fillStyle = COLORS[n.midi % 12]; g.fill();
+    g.fillStyle = "#1b1533"; g.fillText(label, bx + tw / 2, 10 + Math.min(54, hy * 0.18) / 2);
+  }
+
   // Cuenta atrás / ayuda
   g.textBaseline = "middle"; g.textAlign = "center";
   if (S.playing && !S.demo && S.t < 0 && S.notes[0].start > S.t) {
@@ -511,7 +518,6 @@ btnPlay.onclick = () => S.playing && !S.demo ? pause() : start(false);
 btnDemo.onclick = () => S.demo ? (pause(), reset()) : (reset(), start(true));
 btnMic.onclick = toggleMic;
 $("btnAgain").onclick = () => { reset(); start(false); };
-$("mode").onchange = e => { S.mode = e.target.value; reset(); };
 $("speed").onchange = e => { S.speed = +e.target.value; };
 $("file").onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
